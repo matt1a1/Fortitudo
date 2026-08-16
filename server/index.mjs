@@ -25,6 +25,7 @@ async function ensureData() {
     entries: {},
     audit: [],
     users: [],
+    stores: {},
   };
   for (const [name, def] of Object.entries(files)) {
     const p = path.join(DATA_DIR, `${name}.json`);
@@ -153,6 +154,71 @@ const server = http.createServer(async (req, res) => {
       return send(res, 401, { error: "Senha incorreta" });
     }
 
+    // Full profile store used by DashboardPage
+    m = match(url, "/api/profiles/:id/data");
+    if (method === "GET" && m) {
+      if (!VALID_PROFILES.includes(m.id))
+        return send(res, 404, { error: "Perfil invalido" });
+      const stores = await readJSON("stores", {});
+      const store = stores[m.id] || {
+        __tabs__: [
+          { id: "anotacoes", label: "ANOTACOES", code: "ANT" },
+          { id: "cameras", label: "CAMERAS", code: "CAM" },
+          { id: "enigmas", label: "ENIGMAS", code: "ENI" },
+          { id: "virtudes", label: "VIRTUDES", code: "VIR" },
+          { id: "npc", label: "NPC", code: "NPC" },
+        ],
+        __savedAt__: null,
+        anotacoes: [],
+        cameras: [],
+        enigmas: [],
+        virtudes: [],
+        npc: [],
+      };
+      return send(res, 200, store);
+    }
+    if (method === "PUT" && m) {
+      if (!VALID_PROFILES.includes(m.id))
+        return send(res, 404, { error: "Perfil invalido" });
+      const body = await parseBody(req);
+      const stores = await readJSON("stores", {});
+      const prev = stores[m.id] || {};
+      const savedAt = body.__savedAt__ || new Date().toISOString().replace("T", " ").substring(0, 19);
+      stores[m.id] = { ...body, __savedAt__: savedAt };
+      await writeJSON("stores", stores);
+      try {
+        const prevTabs = Array.isArray(prev.__tabs__) ? prev.__tabs__ : [];
+        const nextTabs = Array.isArray(body.__tabs__) ? body.__tabs__ : [];
+        const prevIds = new Set(prevTabs.map((t) => t.id));
+        const nextIds = new Set(nextTabs.map((t) => t.id));
+        for (const t of nextTabs) {
+          if (!prevIds.has(t.id)) {
+            await appendAudit({ profileId: m.id, eventType: "aba_criada", description: "Aba criada: " + (t.label || t.id) });
+          }
+        }
+        for (const t of prevTabs) {
+          if (!nextIds.has(t.id)) {
+            await appendAudit({ profileId: m.id, eventType: "aba_excluida", description: "Aba excluida: " + (t.label || t.id) });
+          }
+        }
+        let prevCount = 0, nextCount = 0;
+        for (const k of Object.keys(prev)) {
+          if (!k.startsWith("__") && Array.isArray(prev[k])) prevCount += prev[k].length;
+        }
+        for (const k of Object.keys(body)) {
+          if (!k.startsWith("__") && Array.isArray(body[k])) nextCount += body[k].length;
+        }
+        if (nextCount > prevCount) {
+          await appendAudit({ profileId: m.id, eventType: "entrada_adicionada", description: "Entradas salvas (" + nextCount + " total)" });
+        } else if (nextCount < prevCount) {
+          await appendAudit({ profileId: m.id, eventType: "entrada_removida", description: "Entradas removidas (" + nextCount + " total)" });
+        }
+      } catch (e) {
+        console.error("audit error", e);
+      }
+      return send(res, 200, { ok: true, __savedAt__: savedAt });
+    }
+
     m = match(url, "/api/profiles/:id/tabs");
     if (method === "GET" && m) {
       if (!VALID_PROFILES.includes(m.id))
@@ -235,14 +301,6 @@ const server = http.createServer(async (req, res) => {
       };
       entries[m.id][m.tabId].push(entry);
       await saveEntries(entries);
-      const tabs = await getTabs();
-      const tab = (tabs[m.id] || []).find((t) => t.id === m.tabId);
-      const preview = (body.text || "").slice(0, 40);
-      await appendAudit({
-        profileId: m.id,
-        eventType: "entrada_adicionada",
-        description: "Entrada adicionada na aba \"" + (tab ? tab.label : m.tabId) + "\": \"" + preview + "\"",
-      });
       return send(res, 200, entry);
     }
 
@@ -255,14 +313,6 @@ const server = http.createServer(async (req, res) => {
       if (!entry) return send(res, 404, { error: "Entrada nao encontrada" });
       if (body.text !== undefined) entry.text = body.text;
       await saveEntries(entries);
-      const tabs = await getTabs();
-      const tab = (tabs[m.id] || []).find((t) => t.id === m.tabId);
-      const preview = (entry.text || "").slice(0, 40);
-      await appendAudit({
-        profileId: m.id,
-        eventType: "entrada_editada",
-        description: "Entrada editada na aba \"" + (tab ? tab.label : m.tabId) + "\": \"" + preview + "\"",
-      });
       return send(res, 200, entry);
     }
     if (method === "DELETE" && m) {
@@ -270,11 +320,6 @@ const server = http.createServer(async (req, res) => {
       const list = (entries[m.id] && entries[m.id][m.tabId]) || [];
       entries[m.id][m.tabId] = list.filter((e) => e.id !== m.entryId);
       await saveEntries(entries);
-      await appendAudit({
-        profileId: m.id,
-        eventType: "entrada_removida",
-        description: "Entrada removida na aba \"" + m.tabId + "\"",
-      });
       return send(res, 200, { ok: true });
     }
 
@@ -315,15 +360,15 @@ const server = http.createServer(async (req, res) => {
       if (body.password !== ADMIN_PASSWORD)
         return send(res, 401, { error: "Acesso negado" });
       const passwords = await getPasswords();
-      const tabs = await getTabs();
-      const entries = await getEntries();
+      const stores = await readJSON("stores", {});
       const perfis = {};
       for (const id of VALID_PROFILES) {
+        const store = stores[id] || {};
         perfis[id] = {
           senha: passwords[id],
-          abas: tabs[id] || [],
-          conteudo: entries[id] || {},
-          ultima_sync: null,
+          abas: store.__tabs__ || [],
+          conteudo: store,
+          ultima_sync: store.__savedAt__ || null,
         };
       }
       return send(res, 200, {
