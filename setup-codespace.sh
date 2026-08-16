@@ -2,43 +2,47 @@
 set -e
 cd "$(dirname "$0")"
 
-mkdir -p client/src/pages client/src/components/ui client/src/contexts client/src/lib server/chunks
+mkdir -p client/src/pages client/src/components/ui client/src/contexts client/src/lib
 
-# Restaura API se ainda estiver em chunks
-if [ ! -f server/index.mjs ] && [ -d server/chunks ]; then
-  cat server/chunks/part*.txt 2>/dev/null | base64 -d > server/index.mjs || true
+# Garante server completo
+if [ ! -f server/index.mjs ] || [ "$(wc -l < server/index.mjs)" -lt 100 ]; then
+  echo "Baixando server/index.mjs completo..."
+  curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/server/index.mjs" -o server/index.mjs
 fi
 
-# Copia paginas da raiz legada se faltarem em client/
+# Copia paginas da raiz (forca)
 for f in LoginPage DashboardPage EstrangeiroFlow not-found; do
-  if [ -f "${f}.tsx" ] && [ ! -f "client/src/pages/${f}.tsx" ]; then
-    cp "${f}.tsx" "client/src/pages/${f}.tsx"
-    echo "copied ${f}.tsx"
+  if [ -f "${f}.tsx" ]; then
+    cp -f "${f}.tsx" "client/src/pages/${f}.tsx"
+    echo "copied pages/${f}.tsx"
   fi
 done
 
-if [ -f SettingsContext.tsx ] && [ ! -f client/src/contexts/SettingsContext.tsx ]; then
-  cp SettingsContext.tsx client/src/contexts/
+if [ -f SettingsContext.tsx ]; then
+  cp -f SettingsContext.tsx client/src/contexts/SettingsContext.tsx
+  echo "copied contexts/SettingsContext.tsx"
 fi
-if [ -f SettingsPanel.tsx ] && [ ! -f client/src/components/SettingsPanel.tsx ]; then
-  cp SettingsPanel.tsx client/src/components/
+if [ -f SettingsPanel.tsx ]; then
+  cp -f SettingsPanel.tsx client/src/components/SettingsPanel.tsx
+  echo "copied components/SettingsPanel.tsx"
 fi
-if [ -f index.css ] && [ ! -f client/src/index.css ]; then
-  cp index.css client/src/
+if [ -f utils.ts ]; then
+  cp -f utils.ts client/src/lib/utils.ts
+  echo "copied lib/utils.ts"
 fi
-if [ -f card.tsx ] && [ ! -f client/src/components/ui/card.tsx ]; then
-  mkdir -p client/src/components/ui
-  cp card.tsx client/src/components/ui/
+if [ -f card.tsx ]; then
+  cp -f card.tsx client/src/components/ui/card.tsx
 fi
-if [ -f button.tsx ] && [ ! -f client/src/components/ui/button.tsx ]; then
-  mkdir -p client/src/components/ui
-  cp button.tsx client/src/components/ui/
-fi
-if [ -f utils.ts ] && [ ! -f client/src/lib/utils.ts ]; then
-  mkdir -p client/src/lib
-  cp utils.ts client/src/lib/
+if [ -f button.tsx ]; then
+  cp -f button.tsx client/src/components/ui/button.tsx
 fi
 
+# CSS e vite sem Tailwind (evita erro do oxide)
+curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/client/vite.config.ts" -o client/vite.config.ts
+curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/client/package.json" -o client/package.json
+curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/client/src/index.css" -o client/src/index.css
+
+echo ""
 echo "OK — estrutura pronta"
 echo "Proximos comandos:"
 echo "  npm run install:all"
