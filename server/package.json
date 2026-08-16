@@ -1,0 +1,10 @@
+{
+  "name": "fortitude-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node index.mjs",
+    "start": "node index.mjs"
+  }
+}
