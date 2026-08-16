@@ -143,28 +143,26 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
 
-    // Auth profile
     let m = match(url, "/api/profiles/:id/auth");
     if (method === "POST" && m) {
       if (!VALID_PROFILES.includes(m.id))
-        return send(res, 404, { error: "Perfil inválido" });
+        return send(res, 404, { error: "Perfil invalido" });
       const body = await parseBody(req);
       const passwords = await getPasswords();
       if (body.password === passwords[m.id]) return send(res, 200, { ok: true });
       return send(res, 401, { error: "Senha incorreta" });
     }
 
-    // Tabs list
     m = match(url, "/api/profiles/:id/tabs");
     if (method === "GET" && m) {
       if (!VALID_PROFILES.includes(m.id))
-        return send(res, 404, { error: "Perfil inválido" });
+        return send(res, 404, { error: "Perfil invalido" });
       const tabs = await getTabs();
       return send(res, 200, tabs[m.id] || []);
     }
     if (method === "POST" && m) {
       if (!VALID_PROFILES.includes(m.id))
-        return send(res, 404, { error: "Perfil inválido" });
+        return send(res, 404, { error: "Perfil invalido" });
       const body = await parseBody(req);
       const tabs = await getTabs();
       const list = tabs[m.id] || [];
@@ -179,19 +177,18 @@ const server = http.createServer(async (req, res) => {
       await appendAudit({
         profileId: m.id,
         eventType: "aba_criada",
-        description: `Aba criada: \"${tab.label}\"`,
+        description: "Aba criada: " + tab.label,
       });
       return send(res, 200, tab);
     }
 
-    // Tab by id
     m = match(url, "/api/profiles/:id/tabs/:tabId");
     if (method === "PUT" && m) {
       const body = await parseBody(req);
       const tabs = await getTabs();
       const list = tabs[m.id] || [];
       const tab = list.find((t) => t.id === m.tabId);
-      if (!tab) return send(res, 404, { error: "Aba não encontrada" });
+      if (!tab) return send(res, 404, { error: "Aba nao encontrada" });
       const old = tab.label;
       if (body.label) tab.label = body.label;
       tabs[m.id] = list;
@@ -199,7 +196,7 @@ const server = http.createServer(async (req, res) => {
       await appendAudit({
         profileId: m.id,
         eventType: "aba_renomeada",
-        description: `Aba renomeada: \"${old}\" → \"${tab.label}\"`,
+        description: "Aba renomeada: " + old + " -> " + tab.label,
       });
       return send(res, 200, tab);
     }
@@ -207,7 +204,7 @@ const server = http.createServer(async (req, res) => {
       const tabs = await getTabs();
       const list = tabs[m.id] || [];
       const tab = list.find((t) => t.id === m.tabId);
-      if (!tab) return send(res, 404, { error: "Aba não encontrada" });
+      if (!tab) return send(res, 404, { error: "Aba nao encontrada" });
       tabs[m.id] = list.filter((t) => t.id !== m.tabId);
       await saveTabs(tabs);
       const entries = await getEntries();
@@ -216,12 +213,11 @@ const server = http.createServer(async (req, res) => {
       await appendAudit({
         profileId: m.id,
         eventType: "aba_excluida",
-        description: `Aba excluída: \"${tab.label}\"`,
+        description: "Aba excluida: " + tab.label,
       });
       return send(res, 200, { ok: true });
     }
 
-    // Entries
     m = match(url, "/api/profiles/:id/tabs/:tabId/entries");
     if (method === "GET" && m) {
       const entries = await getEntries();
@@ -241,10 +237,11 @@ const server = http.createServer(async (req, res) => {
       await saveEntries(entries);
       const tabs = await getTabs();
       const tab = (tabs[m.id] || []).find((t) => t.id === m.tabId);
+      const preview = (body.text || "").slice(0, 40);
       await appendAudit({
         profileId: m.id,
         eventType: "entrada_adicionada",
-        description: `Entrada adicionada na aba \"${tab?.label || m.tabId}\": \"${(body.text || \"\").slice(0, 40)}\"`,
+        description: "Entrada adicionada na aba \"" + (tab ? tab.label : m.tabId) + "\": \"" + preview + "\"",
       });
       return send(res, 200, entry);
     }
@@ -255,15 +252,16 @@ const server = http.createServer(async (req, res) => {
       const entries = await getEntries();
       const list = (entries[m.id] && entries[m.id][m.tabId]) || [];
       const entry = list.find((e) => e.id === m.entryId);
-      if (!entry) return send(res, 404, { error: "Entrada não encontrada" });
+      if (!entry) return send(res, 404, { error: "Entrada nao encontrada" });
       if (body.text !== undefined) entry.text = body.text;
       await saveEntries(entries);
       const tabs = await getTabs();
       const tab = (tabs[m.id] || []).find((t) => t.id === m.tabId);
+      const preview = (entry.text || "").slice(0, 40);
       await appendAudit({
         profileId: m.id,
         eventType: "entrada_editada",
-        description: `Entrada editada na aba \"${tab?.label || m.tabId}\": \"${(entry.text || \"\").slice(0, 40)}\"`,
+        description: "Entrada editada na aba \"" + (tab ? tab.label : m.tabId) + "\": \"" + preview + "\"",
       });
       return send(res, 200, entry);
     }
@@ -275,12 +273,11 @@ const server = http.createServer(async (req, res) => {
       await appendAudit({
         profileId: m.id,
         eventType: "entrada_removida",
-        description: `Entrada removida na aba \"${m.tabId}\"`,
+        description: "Entrada removida na aba \"" + m.tabId + "\"",
       });
       return send(res, 200, { ok: true });
     }
 
-    // Admin audit
     if (method === "POST" && url === "/api/admin/audit/list") {
       const body = await parseBody(req);
       if (body.password !== ADMIN_PASSWORD)
@@ -288,7 +285,6 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, await getAudit());
     }
 
-    // Admin passwords
     if (method === "POST" && url === "/api/admin/passwords") {
       const body = await parseBody(req);
       if (body.password !== ADMIN_PASSWORD)
@@ -302,19 +298,18 @@ const server = http.createServer(async (req, res) => {
       if (body.password !== ADMIN_PASSWORD)
         return send(res, 401, { error: "Acesso negado" });
       if (!VALID_PROFILES.includes(m.id))
-        return send(res, 404, { error: "Perfil inválido" });
+        return send(res, 404, { error: "Perfil invalido" });
       const passwords = await getPasswords();
       passwords[m.id] = body.newPassword;
       await savePasswords(passwords);
       await appendAudit({
         profileId: m.id,
         eventType: "senha_alterada",
-        description: `Senha alterada para ${m.id}`,
+        description: "Senha alterada para " + m.id,
       });
       return send(res, 200, { ok: true });
     }
 
-    // Admin backup
     if (method === "POST" && url === "/api/admin/backup") {
       const body = await parseBody(req);
       if (body.password !== ADMIN_PASSWORD)
@@ -338,24 +333,24 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
-    // Estrangeiros
     if (method === "POST" && url === "/api/estrangeiros/login") {
       const body = await parseBody(req);
       const users = await getUsers();
       const user = users.find(
         (u) =>
-          u.name?.toLowerCase() === (body.name || "").toLowerCase() &&
+          u.name &&
+          u.name.toLowerCase() === (body.name || "").toLowerCase() &&
           u.password === body.password
       );
-      if (!user) return send(res, 401, { error: "Credenciais inválidas" });
+      if (!user) return send(res, 401, { error: "Credenciais invalidas" });
       return send(res, 200, user);
     }
 
     if (method === "POST" && url === "/api/estrangeiros/register") {
       const body = await parseBody(req);
       const users = await getUsers();
-      if (users.some((u) => u.name?.toLowerCase() === (body.name || "").toLowerCase()))
-        return send(res, 409, { error: "Nome já existe" });
+      if (users.some((u) => u.name && u.name.toLowerCase() === (body.name || "").toLowerCase()))
+        return send(res, 409, { error: "Nome ja existe" });
       const user = {
         id: randomUUID(),
         name: body.name || "",
@@ -380,14 +375,14 @@ const server = http.createServer(async (req, res) => {
     if (method === "GET" && m) {
       const users = await getUsers();
       const user = users.find((u) => u.id === m.id);
-      if (!user) return send(res, 404, { error: "Usuário não encontrado" });
+      if (!user) return send(res, 404, { error: "Usuario nao encontrado" });
       return send(res, 200, user.tabs || []);
     }
     if (method === "POST" && m) {
       const body = await parseBody(req);
       const users = await getUsers();
       const user = users.find((u) => u.id === m.id);
-      if (!user) return send(res, 404, { error: "Usuário não encontrado" });
+      if (!user) return send(res, 404, { error: "Usuario nao encontrado" });
       const tab = {
         id: randomUUID(),
         label: body.label || "Nova aba",
@@ -404,9 +399,9 @@ const server = http.createServer(async (req, res) => {
       const body = await parseBody(req);
       const users = await getUsers();
       const user = users.find((u) => u.id === m.id);
-      if (!user) return send(res, 404, { error: "Usuário não encontrado" });
+      if (!user) return send(res, 404, { error: "Usuario nao encontrado" });
       const tab = (user.tabs || []).find((t) => t.id === m.tabId);
-      if (!tab) return send(res, 404, { error: "Aba não encontrada" });
+      if (!tab) return send(res, 404, { error: "Aba nao encontrada" });
       const entry = {
         id: randomUUID(),
         text: body.text || "",
@@ -426,7 +421,7 @@ const server = http.createServer(async (req, res) => {
       const users = await getUsers();
       const filtered = users.filter((u) => u.id !== m.id);
       if (filtered.length === users.length)
-        return send(res, 404, { error: "Usuário não encontrado" });
+        return send(res, 404, { error: "Usuario nao encontrado" });
       await saveUsers(filtered);
       return send(res, 200, { ok: true });
     }
@@ -439,5 +434,5 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log(`[Fortitude API] http://0.0.0.0:${PORT}`);
+  console.log("[Fortitude API] http://0.0.0.0:" + PORT);
 });
