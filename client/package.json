@@ -18,11 +18,11 @@
     "@radix-ui/react-slot": "^1.2.0"
   },
   "devDependencies": {
-    "@vitejs/plugin-react": "^4.4.1",
-    "vite": "^5.4.11",
-    "typescript": "^5.8.3",
+    "@vitejs/plugin-react": "^4.2.1",
+    "vite": "4.5.3",
+    "typescript": "^5.4.5",
     "@types/react": "^18.3.20",
     "@types/react-dom": "^18.3.6",
-    "@types/node": "^22.14.0"
+    "@types/node": "^20.14.0"
   }
 }
