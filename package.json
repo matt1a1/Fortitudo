@@ -4,8 +4,13 @@
   "private": true,
   "scripts": {
     "install:all": "npm install --prefix client",
+    "build": "npm run build --prefix client",
     "dev:server": "node server/index.mjs",
     "dev:client": "npm run dev --prefix client",
-    "start": "node server/index.mjs"
+    "start": "node server/index.mjs",
+    "postinstall": "npm install --prefix client"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
