@@ -1,34 +1,36 @@
-/* Fortitude base styles */
+/* Fortitude base styles + theme fallbacks (match dashboard screenshot) */
 *, *::before, *::after { box-sizing: border-box; }
 html, body, #root { margin: 0; padding: 0; min-height: 100%; }
 body {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   background: #0a0a0a;
-  color: #e8e8e8;
+  color: #c8c8c8;
   -webkit-font-smoothing: antialiased;
 }
 button, input, textarea { font-family: inherit; }
 a { color: inherit; }
 
 :root {
-  --background: 30 100% 96%;
-  --foreground: 15 60% 15%;
-  --border: 25 40% 80%;
-  --card: 35 80% 92%;
-  --card-foreground: 15 60% 15%;
-  --primary: 10 80% 50%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 35 70% 55%;
-  --muted: 30 30% 88%;
-  --muted-foreground: 15 20% 45%;
-  --accent: 25 90% 55%;
-  --destructive: 0 85% 45%;
-  --input: 25 40% 75%;
-  --ring: 10 80% 50%;
-  --radius: .5rem;
+  /* Dashboard theme defaults = Fortitudo orange dark */
+  --c-accent: #ff6600;
+  --c-accent-lt: #ff8c00;
+  --c-accent-rgb: 255, 102, 0;
+  --c-accent-hex: #ff6600;
+  --c-bg-page: #0a0a0a;
+  --c-bg-card: #0e0e0e;
+  --c-bg-card-hover: #141414;
+  --c-bg-edit: #161616;
+  --c-bg-input: #0d0d0d;
+  --c-header-bg: rgba(8, 8, 8, 0.95);
+  --c-tab-bg: rgba(10, 10, 10, 0.96);
+  --c-text-primary: #c8c8c8;
+  --c-text-dim: rgba(200, 200, 200, 0.28);
+  --c-text-entry: #ff8c00;
+  --c-text-entry-edit: #ff8c00;
   --c-login-bg: #0a0a0a;
-  --c-login-vignette: rgba(0,0,0,0.55);
-  --c-login-grid: rgba(140,140,140,0.06);
+  --c-login-vignette: rgba(0, 0, 0, 0.55);
+  --c-login-grid: rgba(140, 140, 140, 0.06);
+  --font-zoom: 1;
   --app-font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -40,5 +42,9 @@ a { color: inherit; }
   0%, 100% { transform: translateX(0); }
   15%, 45%, 75% { transform: translateX(-7px); }
   30%, 60%, 90% { transform: translateX(7px); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
 }
 .animate-shake { animation: shake 0.48s ease-in-out; }
