@@ -1,6 +1,6 @@
 [build]
-builder = "NIXPACKS"
-buildCommand = "bash setup-codespace.sh && npm install --prefix client && npm run build --prefix client"
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
 
 [deploy]
 startCommand = "node server/index.mjs"
