@@ -1,11 +1,12 @@
 FROM node:20-bookworm-slim
 
+RUN apt-get update && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copy whole repo
 COPY . .
 
-# Prepare client sources from root pages + install + build
 RUN bash setup-codespace.sh \
   && npm install --prefix client \
   && npm run build --prefix client \
