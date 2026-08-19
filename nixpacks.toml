@@ -2,7 +2,7 @@
 nixPkgs = ["nodejs_20", "npm-9_x"]
 
 [phases.install]
-cmds = ["npm install --prefix client"]
+cmds = ["bash setup-codespace.sh", "npm install --prefix client"]
 
 [phases.build]
 cmds = ["npm run build --prefix client"]
