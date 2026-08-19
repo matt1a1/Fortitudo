@@ -8,4 +8,4 @@ cmds = ["bash setup-codespace.sh", "npm install --prefix client"]
 cmds = ["npm run build --prefix client"]
 
 [start]
-cmd = "node apply-production.mjs && node server/index.mjs"
+cmd = "node server/index.mjs"
