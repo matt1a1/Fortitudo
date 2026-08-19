@@ -1,5 +1,6 @@
 import http from "http";
 import fs from "fs/promises";
+import { createReadStream, existsSync } from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import { randomUUID } from "crypto";
@@ -140,7 +141,7 @@ const server = http.createServer(async (req, res) => {
   const method = req.method || "GET";
 
   try {
-    if (method === "GET" && url === "/api/healthz") {
+    if (method === "GET" && (url === "/api/healthz" || url.startsWith("/api/healthz?"))) {
       return send(res, 200, { ok: true });
     }
 
@@ -154,7 +155,26 @@ const server = http.createServer(async (req, res) => {
       return send(res, 401, { error: "Senha incorreta" });
     }
 
-    // Full profile store used by DashboardPage
+    m = match(url, "/api/profiles/:id/password");
+    if (method === "PUT" && m) {
+      if (!VALID_PROFILES.includes(m.id))
+        return send(res, 404, { error: "Perfil invalido" });
+      const body = await parseBody(req);
+      const passwords = await getPasswords();
+      if (!body.oldPassword || body.oldPassword !== passwords[m.id])
+        return send(res, 401, { error: "Senha atual incorreta" });
+      if (!body.newPassword || String(body.newPassword).length < 4)
+        return send(res, 400, { error: "Nova senha invalida (minimo 4 caracteres)" });
+      passwords[m.id] = String(body.newPassword);
+      await savePasswords(passwords);
+      await appendAudit({
+        profileId: m.id,
+        eventType: "senha_alterada",
+        description: "Senha alterada no perfil " + m.id,
+      });
+      return send(res, 200, { ok: true });
+    }
+
     m = match(url, "/api/profiles/:id/data");
     if (method === "GET" && m) {
       if (!VALID_PROFILES.includes(m.id))
@@ -186,36 +206,6 @@ const server = http.createServer(async (req, res) => {
       const savedAt = body.__savedAt__ || new Date().toISOString().replace("T", " ").substring(0, 19);
       stores[m.id] = { ...body, __savedAt__: savedAt };
       await writeJSON("stores", stores);
-      try {
-        const prevTabs = Array.isArray(prev.__tabs__) ? prev.__tabs__ : [];
-        const nextTabs = Array.isArray(body.__tabs__) ? body.__tabs__ : [];
-        const prevIds = new Set(prevTabs.map((t) => t.id));
-        const nextIds = new Set(nextTabs.map((t) => t.id));
-        for (const t of nextTabs) {
-          if (!prevIds.has(t.id)) {
-            await appendAudit({ profileId: m.id, eventType: "aba_criada", description: "Aba criada: " + (t.label || t.id) });
-          }
-        }
-        for (const t of prevTabs) {
-          if (!nextIds.has(t.id)) {
-            await appendAudit({ profileId: m.id, eventType: "aba_excluida", description: "Aba excluida: " + (t.label || t.id) });
-          }
-        }
-        let prevCount = 0, nextCount = 0;
-        for (const k of Object.keys(prev)) {
-          if (!k.startsWith("__") && Array.isArray(prev[k])) prevCount += prev[k].length;
-        }
-        for (const k of Object.keys(body)) {
-          if (!k.startsWith("__") && Array.isArray(body[k])) nextCount += body[k].length;
-        }
-        if (nextCount > prevCount) {
-          await appendAudit({ profileId: m.id, eventType: "entrada_adicionada", description: "Entradas salvas (" + nextCount + " total)" });
-        } else if (nextCount < prevCount) {
-          await appendAudit({ profileId: m.id, eventType: "entrada_removida", description: "Entradas removidas (" + nextCount + " total)" });
-        }
-      } catch (e) {
-        console.error("audit error", e);
-      }
       return send(res, 200, { ok: true, __savedAt__: savedAt });
     }
 
@@ -240,11 +230,6 @@ const server = http.createServer(async (req, res) => {
       list.push(tab);
       tabs[m.id] = list;
       await saveTabs(tabs);
-      await appendAudit({
-        profileId: m.id,
-        eventType: "aba_criada",
-        description: "Aba criada: " + tab.label,
-      });
       return send(res, 200, tab);
     }
 
@@ -255,15 +240,9 @@ const server = http.createServer(async (req, res) => {
       const list = tabs[m.id] || [];
       const tab = list.find((t) => t.id === m.tabId);
       if (!tab) return send(res, 404, { error: "Aba nao encontrada" });
-      const old = tab.label;
       if (body.label) tab.label = body.label;
       tabs[m.id] = list;
       await saveTabs(tabs);
-      await appendAudit({
-        profileId: m.id,
-        eventType: "aba_renomeada",
-        description: "Aba renomeada: " + old + " -> " + tab.label,
-      });
       return send(res, 200, tab);
     }
     if (method === "DELETE" && m) {
@@ -273,14 +252,6 @@ const server = http.createServer(async (req, res) => {
       if (!tab) return send(res, 404, { error: "Aba nao encontrada" });
       tabs[m.id] = list.filter((t) => t.id !== m.tabId);
       await saveTabs(tabs);
-      const entries = await getEntries();
-      if (entries[m.id]) delete entries[m.id][m.tabId];
-      await saveEntries(entries);
-      await appendAudit({
-        profileId: m.id,
-        eventType: "aba_excluida",
-        description: "Aba excluida: " + tab.label,
-      });
       return send(res, 200, { ok: true });
     }
 
@@ -323,6 +294,16 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
 
+    if (method === "POST" && url === "/api/admin/audit") {
+      const body = await parseBody(req);
+      await appendAudit({
+        profileId: body.profileId || "system",
+        eventType: body.eventType || "evento",
+        description: body.description || "",
+      });
+      return send(res, 200, { ok: true });
+    }
+
     if (method === "POST" && url === "/api/admin/audit/list") {
       const body = await parseBody(req);
       if (body.password !== ADMIN_PASSWORD)
@@ -344,8 +325,10 @@ const server = http.createServer(async (req, res) => {
         return send(res, 401, { error: "Acesso negado" });
       if (!VALID_PROFILES.includes(m.id))
         return send(res, 404, { error: "Perfil invalido" });
+      if (!body.newPassword || String(body.newPassword).length < 4)
+        return send(res, 400, { error: "Nova senha invalida" });
       const passwords = await getPasswords();
-      passwords[m.id] = body.newPassword;
+      passwords[m.id] = String(body.newPassword);
       await savePasswords(passwords);
       await appendAudit({
         profileId: m.id,
@@ -388,7 +371,7 @@ const server = http.createServer(async (req, res) => {
           u.password === body.password
       );
       if (!user) return send(res, 401, { error: "Credenciais invalidas" });
-      return send(res, 200, user);
+      return send(res, 200, { user });
     }
 
     if (method === "POST" && url === "/api/estrangeiros/register") {
@@ -402,11 +385,15 @@ const server = http.createServer(async (req, res) => {
         discordNick: body.discordNick || "",
         password: body.password || "",
         createdAt: new Date().toISOString(),
-        tabs: [],
+        tabs: [
+          { id: "anotacoes", label: "Anotacoes", entries: [] },
+          { id: "enigmas", label: "Enigmas", entries: [] },
+          { id: "teorias", label: "Teorias", entries: [] },
+        ],
       };
       users.push(user);
       await saveUsers(users);
-      return send(res, 200, user);
+      return send(res, 200, { user });
     }
 
     if (method === "POST" && url === "/api/estrangeiros/admin") {
@@ -414,6 +401,23 @@ const server = http.createServer(async (req, res) => {
       if (body.password !== ADMIN_PASSWORD)
         return send(res, 401, { error: "Acesso negado" });
       return send(res, 200, { users: await getUsers(), audit: [] });
+    }
+
+    m = match(url, "/api/estrangeiros/:id/data");
+    if (method === "GET" && m) {
+      const users = await getUsers();
+      const user = users.find((u) => u.id === m.id);
+      if (!user) return send(res, 404, { error: "Usuario nao encontrado" });
+      return send(res, 200, { tabs: user.tabs || [] });
+    }
+    if (method === "PUT" && m) {
+      const body = await parseBody(req);
+      const users = await getUsers();
+      const user = users.find((u) => u.id === m.id);
+      if (!user) return send(res, 404, { error: "Usuario nao encontrado" });
+      user.tabs = Array.isArray(body.tabs) ? body.tabs : user.tabs || [];
+      await saveUsers(users);
+      return send(res, 200, { ok: true, tabs: user.tabs });
     }
 
     m = match(url, "/api/estrangeiros/:id/tabs");
@@ -439,23 +443,32 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, tab);
     }
 
-    m = match(url, "/api/estrangeiros/:id/tabs/:tabId/entries");
-    if (method === "POST" && m) {
+    m = match(url, "/api/estrangeiros/admin/users/:id/password");
+    if (method === "PUT" && m) {
       const body = await parseBody(req);
+      if (body.password !== ADMIN_PASSWORD)
+        return send(res, 401, { error: "Acesso negado" });
       const users = await getUsers();
       const user = users.find((u) => u.id === m.id);
       if (!user) return send(res, 404, { error: "Usuario nao encontrado" });
-      const tab = (user.tabs || []).find((t) => t.id === m.tabId);
-      if (!tab) return send(res, 404, { error: "Aba nao encontrada" });
-      const entry = {
-        id: randomUUID(),
-        text: body.text || "",
-        timestamp: new Date().toISOString(),
-      };
-      tab.entries = tab.entries || [];
-      tab.entries.push(entry);
+      if (!body.newPassword || String(body.newPassword).length < 4)
+        return send(res, 400, { error: "Nova senha invalida" });
+      user.password = String(body.newPassword);
       await saveUsers(users);
-      return send(res, 200, entry);
+      return send(res, 200, { ok: true });
+    }
+
+    m = match(url, "/api/estrangeiros/admin/users/:id");
+    if (method === "DELETE" && m) {
+      const body = await parseBody(req);
+      if (body.password !== ADMIN_PASSWORD)
+        return send(res, 401, { error: "Acesso negado" });
+      const users = await getUsers();
+      const filtered = users.filter((u) => u.id !== m.id);
+      if (filtered.length === users.length)
+        return send(res, 404, { error: "Usuario nao encontrado" });
+      await saveUsers(filtered);
+      return send(res, 200, { ok: true });
     }
 
     m = match(url, "/api/estrangeiros/:id");
@@ -471,6 +484,46 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
 
+    // Serve frontend (client/dist)
+    const distDir = path.join(__dirname, "..", "client", "dist");
+    if (method === "GET" && !url.startsWith("/api")) {
+      if (!existsSync(distDir)) {
+        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+        res.end(
+          "<!doctype html><html><body style=\"font-family:monospace;background:#0a0a0a;color:#ff6600;padding:40px\">" +
+            "<h1>FORTITUDE</h1><p>API ok, mas client/dist nao existe. Rebuild no Railway.</p>" +
+            "<p>health: <a href=\"/api/healthz\" style=\"color:#ff8c00\">/api/healthz</a></p></body></html>"
+        );
+        return;
+      }
+      let filePath = path.join(distDir, url === "/" ? "index.html" : url.split("?")[0]);
+      if (!existsSync(filePath) || (await fs.stat(filePath).catch(() => null))?.isDirectory()) {
+        filePath = path.join(distDir, "index.html");
+      }
+      if (existsSync(filePath)) {
+        const ext = path.extname(filePath).toLowerCase();
+        const types = {
+          ".html": "text/html; charset=utf-8",
+          ".js": "application/javascript; charset=utf-8",
+          ".css": "text/css; charset=utf-8",
+          ".svg": "image/svg+xml",
+          ".png": "image/png",
+          ".jpg": "image/jpeg",
+          ".jpeg": "image/jpeg",
+          ".ico": "image/x-icon",
+          ".json": "application/json",
+          ".woff": "font/woff",
+          ".woff2": "font/woff2",
+        };
+        res.writeHead(200, {
+          "Content-Type": types[ext] || "application/octet-stream",
+          "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=86400",
+        });
+        createReadStream(filePath).pipe(res);
+        return;
+      }
+    }
+
     send(res, 404, { error: "Not found" });
   } catch (err) {
     console.error(err);
@@ -479,5 +532,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, "0.0.0.0", () => {
-  console.log("[Fortitude API] http://0.0.0.0:" + PORT);
+  console.log("[Fortitude] http://0.0.0.0:" + PORT);
+  const distDir = path.join(__dirname, "..", "client", "dist");
+  console.log("[Fortitude] dist exists:", existsSync(distDir));
 });
