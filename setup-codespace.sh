@@ -4,10 +4,14 @@ cd "$(dirname "$0")"
 
 mkdir -p client/src/pages client/src/components/ui client/src/contexts client/src/lib
 
-# Garante server completo
+# Garante server completo (so tenta curl se existir)
 if [ ! -f server/index.mjs ] || [ "$(wc -l < server/index.mjs)" -lt 100 ]; then
-  echo "Baixando server/index.mjs completo..."
-  curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/server/index.mjs" -o server/index.mjs
+  if command -v curl >/dev/null 2>&1; then
+    echo "Baixando server/index.mjs completo..."
+    curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/server/index.mjs" -o server/index.mjs
+  else
+    echo "AVISO: server/index.mjs incompleto e curl indisponivel"
+  fi
 fi
 
 # Copia paginas da raiz (forca)
@@ -37,10 +41,14 @@ if [ -f button.tsx ]; then
   cp -f button.tsx client/src/components/ui/button.tsx
 fi
 
-# CSS e vite sem Tailwind (evita erro do oxide)
-curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/client/vite.config.ts" -o client/vite.config.ts
-curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/client/package.json" -o client/package.json
-curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/client/src/index.css" -o client/src/index.css
+# CSS e vite: usa arquivos do repo; curl so se disponivel
+if command -v curl >/dev/null 2>&1; then
+  curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/client/vite.config.ts" -o client/vite.config.ts || true
+  curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/client/package.json" -o client/package.json || true
+  curl -fsSL "https://raw.githubusercontent.com/matt1a1/Fortitudo/main/client/src/index.css" -o client/src/index.css || true
+else
+  echo "curl ausente — mantendo client/vite.config.ts, package.json e index.css do repo"
+fi
 
 echo ""
 echo "OK — estrutura pronta"
