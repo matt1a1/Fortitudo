@@ -5,4 +5,3 @@ buildCommand = "npm install --prefix client && npm run build --prefix client"
 [deploy]
 startCommand = "node server/index.mjs"
 restartPolicyType = "ON_FAILURE"
-}
