@@ -202,7 +202,6 @@ const server = http.createServer(async (req, res) => {
         return send(res, 404, { error: "Perfil invalido" });
       const body = await parseBody(req);
       const stores = await readJSON("stores", {});
-      const prev = stores[m.id] || {};
       const savedAt = body.__savedAt__ || new Date().toISOString().replace("T", " ").substring(0, 19);
       stores[m.id] = { ...body, __savedAt__: savedAt };
       await writeJSON("stores", stores);
@@ -248,8 +247,6 @@ const server = http.createServer(async (req, res) => {
     if (method === "DELETE" && m) {
       const tabs = await getTabs();
       const list = tabs[m.id] || [];
-      const tab = list.find((t) => t.id === m.tabId);
-      if (!tab) return send(res, 404, { error: "Aba nao encontrada" });
       tabs[m.id] = list.filter((t) => t.id !== m.tabId);
       await saveTabs(tabs);
       return send(res, 200, { ok: true });
@@ -330,11 +327,6 @@ const server = http.createServer(async (req, res) => {
       const passwords = await getPasswords();
       passwords[m.id] = String(body.newPassword);
       await savePasswords(passwords);
-      await appendAudit({
-        profileId: m.id,
-        eventType: "senha_alterada",
-        description: "Senha alterada para " + m.id,
-      });
       return send(res, 200, { ok: true });
     }
 
@@ -432,11 +424,7 @@ const server = http.createServer(async (req, res) => {
       const users = await getUsers();
       const user = users.find((u) => u.id === m.id);
       if (!user) return send(res, 404, { error: "Usuario nao encontrado" });
-      const tab = {
-        id: randomUUID(),
-        label: body.label || "Nova aba",
-        entries: [],
-      };
+      const tab = { id: randomUUID(), label: body.label || "Nova aba", entries: [] };
       user.tabs = user.tabs || [];
       user.tabs.push(tab);
       await saveUsers(users);
@@ -484,44 +472,52 @@ const server = http.createServer(async (req, res) => {
       return send(res, 200, { ok: true });
     }
 
-    // Serve frontend (client/dist)
-    const distDir = path.join(__dirname, "..", "client", "dist");
+    // Serve frontend — fix path.join so /assets/* works
     if (method === "GET" && !url.startsWith("/api")) {
-      if (!existsSync(distDir)) {
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(
-          "<!doctype html><html><body style=\"font-family:monospace;background:#0a0a0a;color:#ff6600;padding:40px\">" +
-            "<h1>FORTITUDE</h1><p>API ok, mas client/dist nao existe. Rebuild no Railway.</p>" +
-            "<p>health: <a href=\"/api/healthz\" style=\"color:#ff8c00\">/api/healthz</a></p></body></html>"
-        );
-        return;
+      const candidates = [
+        path.join(__dirname, "..", "client", "dist"),
+        path.join(process.cwd(), "client", "dist"),
+        path.join(__dirname, "dist"),
+      ];
+      const distDir = candidates.find((d) => existsSync(d));
+      const rel = (url.split("?")[0] || "/").replace(/^\/+/, "");
+      if (distDir) {
+        let filePath = path.join(distDir, rel || "index.html");
+        if (!existsSync(filePath) || (await fs.stat(filePath).catch(() => null))?.isDirectory()) {
+          filePath = path.join(distDir, "index.html");
+        }
+        if (existsSync(filePath)) {
+          const ext = path.extname(filePath).toLowerCase();
+          const types = {
+            ".html": "text/html; charset=utf-8",
+            ".js": "application/javascript; charset=utf-8",
+            ".css": "text/css; charset=utf-8",
+            ".svg": "image/svg+xml",
+            ".png": "image/png",
+            ".jpg": "image/jpeg",
+            ".jpeg": "image/jpeg",
+            ".ico": "image/x-icon",
+            ".json": "application/json",
+            ".woff": "font/woff",
+            ".woff2": "font/woff2",
+          };
+          res.writeHead(200, {
+            "Content-Type": types[ext] || "application/octet-stream",
+            "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=86400",
+          });
+          createReadStream(filePath).pipe(res);
+          return;
+        }
       }
-      let filePath = path.join(distDir, url === "/" ? "index.html" : url.split("?")[0]);
-      if (!existsSync(filePath) || (await fs.stat(filePath).catch(() => null))?.isDirectory()) {
-        filePath = path.join(distDir, "index.html");
-      }
-      if (existsSync(filePath)) {
-        const ext = path.extname(filePath).toLowerCase();
-        const types = {
-          ".html": "text/html; charset=utf-8",
-          ".js": "application/javascript; charset=utf-8",
-          ".css": "text/css; charset=utf-8",
-          ".svg": "image/svg+xml",
-          ".png": "image/png",
-          ".jpg": "image/jpeg",
-          ".jpeg": "image/jpeg",
-          ".ico": "image/x-icon",
-          ".json": "application/json",
-          ".woff": "font/woff",
-          ".woff2": "font/woff2",
-        };
-        res.writeHead(200, {
-          "Content-Type": types[ext] || "application/octet-stream",
-          "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=86400",
-        });
-        createReadStream(filePath).pipe(res);
-        return;
-      }
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(
+        "<!doctype html><html><body style=\"font-family:monospace;background:#0a0a0a;color:#ff6600;padding:40px\">" +
+          "<h1>FORTITUDE</h1>" +
+          "<p>API no ar. Front (client/dist) nao encontrado neste container.</p>" +
+          "<p><a href=\"/api/healthz\" style=\"color:#ff8c00\">/api/healthz</a></p>" +
+          "</body></html>"
+      );
+      return;
     }
 
     send(res, 404, { error: "Not found" });
@@ -533,6 +529,10 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, "0.0.0.0", () => {
   console.log("[Fortitude] http://0.0.0.0:" + PORT);
-  const distDir = path.join(__dirname, "..", "client", "dist");
-  console.log("[Fortitude] dist exists:", existsSync(distDir));
+  for (const d of [
+    path.join(__dirname, "..", "client", "dist"),
+    path.join(process.cwd(), "client", "dist"),
+  ]) {
+    console.log("[Fortitude] check", d, existsSync(d));
+  }
 });
