@@ -3,7 +3,7 @@ import fs from "fs";
 const p = "server/index.mjs";
 let t = fs.readFileSync(p, "utf8");
 
-if (!t.includes('from "fs"') && !t.includes("createReadStream")) {
+if (!t.includes("createReadStream")) {
   t = t.replace(
     'import fs from "fs/promises";',
     'import fs from "fs/promises";\nimport { createReadStream, existsSync } from "fs";'
@@ -11,14 +11,14 @@ if (!t.includes('from "fs"') && !t.includes("createReadStream")) {
   console.log("+ import fs sync");
 }
 
-if (!t.includes('client", "dist")') && !t.includes("client', 'dist')")) {
+if (!t.includes("client\", \"dist\")") && !t.includes("client', 'dist')") && !t.includes('"..", "client", "dist"')) {
   const needle = 'send(res, 404, { error: "Not found" });';
   const idx = t.lastIndexOf(needle);
   if (idx < 0) throw new Error("404 marker not found");
   const block = `// Production: serve built frontend (client/dist)
     const distDir = path.join(__dirname, "..", "client", "dist");
     if (method === "GET" && !url.startsWith("/api") && existsSync(distDir)) {
-      let filePath = path.join(distDir, url === "/" ? "index.html" : url);
+      let filePath = path.join(distDir, url === "/" ? "index.html" : url.split("?")[0]);
       if (!existsSync(filePath) || (await fs.stat(filePath).catch(() => null))?.isDirectory()) {
         filePath = path.join(distDir, "index.html");
       }
